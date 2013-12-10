@@ -1,7 +1,7 @@
 blih2exe
 ========
 
-Installeur disponible dans le dossier build.
+Installeur disponible dans le dossier dist.
 
 Sinon, si vous souhaitez "compiler" vous-même blih pour windows:
 1. Installer python3.3
