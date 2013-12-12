@@ -10,8 +10,10 @@ import urllib.parse
 import json
 import getpass
 
+version = 1.6
+
 class blih:
-    def __init__(self, baseurl='https://blih.epitech.eu/', user=None, token=None, async=True, verbose=False):
+    def __init__(self, baseurl='https://blih.epitech.eu/', user=None, token=None, verbose=False):
         self._baseurl = baseurl
         if token:
             self._token = token
@@ -21,7 +23,6 @@ class blih:
             self._user = getpass.getuser()
         else:
             self._user = user
-        self._async = async
         self._verbose = verbose
 
     def token_get(self):
@@ -33,8 +34,7 @@ class blih:
     token = property(token_get, token_set)
 
     def token_calc(self):
-        passwd = getpass.getpass()
-        self._token = bytes(hashlib.sha512(bytes(passwd, 'utf8')).hexdigest(), 'utf8')
+        self._token = bytes(hashlib.sha512(bytes(getpass.getpass(), 'utf8')).hexdigest(), 'utf8')
 
     def sign_data(self, data=None):
         signature = hmac.new(self._token, msg=bytes(self._user, 'utf8'), digestmod=hashlib.sha512)
@@ -59,58 +59,51 @@ class blih:
         try:
             f = urllib.request.urlopen(req)
         except urllib.error.HTTPError as e:
-            return (e.code, e.reason, None, None)
+            print ('HTTP Error ' + str(e.code))
+            data = json.loads(e.read().decode('utf8'))
+            print ("Error message : '" + data['error'] + "'")
+            sys.exit(1)
 
-        return (f.status, f.reason, f.info(), f.read())
+        if f.status == 200:
+            try:
+                data = json.loads(f.read().decode('utf8'))
+            except:
+                print ("Can't decode data, aborting")
+                sys.exit(1)
+            return (f.status, f.reason, f.info(), data)
+
+        print ('Unknown error')
+        sys.exit(1)
 
     def repo_create(self, name, type='git', description=None):
         data = {'name' : name, 'type' : type}
         if description:
             data['description'] = description
         status, reason, headers, data = self.request('user/repositories', method='POST', data=data)
-        if self._verbose or status != 202:
-            print (str(status) + ' ' + reason)
-        if status != 202:
-            sys.exit(1)
-
-        try:
-            headers['Location']
-            print ('Repository URL : ' + headers['Location'])
-        except KeyError:
-            print ('Unknown error')
+        print (data['message'])
 
     def repo_list(self):
         status, reason, headers, data = self.request('user/repositories', method='GET')
-        if self._verbose or status != 200:
-            print (str(status) + ' ' + reason)
-        if data:
-            list = json.loads(data.decode('utf8'))
-            for i in list['repositories']:
-                print (i)
+        for i in data['repositories']:
+            print (i)
+
+    def repo_delete(self, name):
+        status, reason, headers, data = self.request('user/repositories/' + name, method='DELETE')
+        print (data['message'])
 
     def repo_info(self, name):
         status, reason, headers, data = self.request('user/repositories/' + name, method='GET')
-        if self._verbose or status != 200:
-            print (str(status) + ' ' + reason)
-        print (data)
+        print (data['message'])
 
     def repo_setacl(self, name, acluser, acl):
         data = {'user' : acluser, 'acl' : acl}
         status, reason, headers, data = self.request('user/repositories/' + name + '/acl', method='POST', data=data)
-        if self._verbose or status != 200:
-            print (str(status) + ' ' + reason)
-        if status != 200:
-            sys.exit(1)
+        print (data['message'])
 
     def repo_getacl(self, name):
         status, reason, headers, data = self.request('user/repositories/' + name + '/acl', method='GET')
-        if self._verbose or status != 200:
-            print (str(status) + ' ' + reason)
-        if status != 200:
-            sys.exit(1)
-        list = json.loads(data.decode('utf8'))
-        for i in list.keys():
-            print (i + ':' + list[i])
+        for i in data.keys():
+            print (i + ':' + data[i])
 
     def sshkey_upload(self, keyfile):
         try:
@@ -122,20 +115,16 @@ class blih:
         f.close()
         data = {'sshkey' : key}
         status, reason, headers, data = self.request('user/sshkey', method='POST', data=data)
-        if self._verbose or status != 200:
-            print (str(status) + ' ' + reason)
-        if status != 200:
-            sys.exit(1)
+        print (data['message'])
+
+    def sshkey_delete(self, sshkey):
+        status, reason, headers, data = self.request('user/sshkey/' + sshkey, method='DELETE')
+        print (data['message'])
 
     def sshkey_list(self):
         status, reason, headers, data = self.request('user/sshkey', method='GET')
-        if self._verbose or status != 200:
-            print (str(status) + ' ' + reason)
-        if status != 200:
-            sys.exit(1)
-        sshkeys = json.loads(data.decode('utf8'))
-        for i in sshkeys.keys():
-            print (sshkeys[i] + ' ' + i)
+        for i in data.keys():
+            print (data[i] + ' ' + i)
 
 def usage_repository():
     print ('Usage: ' + sys.argv[0] + ' [options] repository command ...')
@@ -152,24 +141,29 @@ def usage_repository():
     print ('\t\t\t\t\ta for admin')
     sys.exit(1)
 
-def repository(args, baseurl, user, verbose, async):
+def repository(args, baseurl, user, token, verbose):
     if len(args) == 0:
         usage_repository()
     if args[0] == 'create':
         if len(args) != 2:
             usage_repository()
-        handle = blih(baseurl=baseurl, user=user, async=async, verbose=verbose)
+        handle = blih(baseurl=baseurl, user=user, token=token, verbose=verbose)
         handle.repo_create(args[1])
     elif args[0] == 'list':
         if len(args) != 1:
             usage_repository()
-        handle = blih(baseurl=baseurl, user=user, async=async, verbose=verbose)
+        handle = blih(baseurl=baseurl, user=user, token=token, verbose=verbose)
         handle.repo_list()
     elif args[0] == 'info':
         if len(args) != 2:
             usage_repository()
-        handle = blih(baseurl=baseurl, user=user, async=async, verbose=verbose)
+        handle = blih(baseurl=baseurl, user=user, token=token, verbose=verbose)
         handle.repo_info(args[1])
+    elif args[0] == 'delete':
+        if len(args) != 2:
+            usage_repository()
+        handle = blih(baseurl=baseurl, user=user, token=token, verbose=verbose)
+        handle.repo_delete(args[1])
     elif args[0] == 'setacl':
         if len(args) != 4 and len(args) != 3:
             usage_repository()
@@ -177,12 +171,12 @@ def repository(args, baseurl, user, verbose, async):
             acl = ''
         else:
             acl = args[3]
-        handle = blih(baseurl=baseurl, user=user, async=async, verbose=verbose)
+        handle = blih(baseurl=baseurl, user=user, token=token, verbose=verbose)
         handle.repo_setacl(args[1], args[2], acl)
     elif args[0] == 'getacl':
         if len(args) != 2:
             usage_repository()
-        handle = blih(baseurl=baseurl, user=user, async=async, verbose=verbose)
+        handle = blih(baseurl=baseurl, user=user, token=token, verbose=verbose)
         handle.repo_getacl(args[1])
     else:
         usage_repository()
@@ -193,13 +187,14 @@ def usage_sshkey():
     print ('Commands :')
     print ('\tupload [file]\t\t\t-- Upload a new ssh-key')
     print ('\tlist\t\t\t\t-- List the ssh-keys')
+    print ('\tdelete <sshkey>\t\t\t-- Delete the sshkey with comment <sshkey>')
     sys.exit(1)
 
-def sshkey(args, baseurl, user, verbose, async):
+def sshkey(args, baseurl, user, token, verbose):
     if len(args) == 0:
         usage_sshkey()
     if args[0] == 'list':
-        handle = blih(baseurl=baseurl, user=user, async=async, verbose=verbose)
+        handle = blih(baseurl=baseurl, user=user, token=token, verbose=verbose)
         handle.sshkey_list()
     elif args[0] == 'upload':
         key = None
@@ -209,8 +204,13 @@ def sshkey(args, baseurl, user, verbose, async):
             key = args[1]
         else:
             usage_sshkey()
-        handle = blih(baseurl=baseurl, user=user, async=async, verbose=verbose)
+        handle = blih(baseurl=baseurl, user=user, token=token, verbose=verbose)
         handle.sshkey_upload(key)
+    elif args[0] == 'delete':
+        if len(args) != 2:
+            usage_sshkey()
+        handle = blih(baseurl=baseurl, user=user, token=token, verbose=verbose)
+        handle.sshkey_delete(args[1])
     else:
         usage_sshkey()
 
@@ -222,6 +222,7 @@ def usage():
     print ('\t-v | --verbose\t\t\t-- Verbose')
     print ('\t-b url | --baseurl=url\t\t-- Base URL for BLIH')
     print ('\t-s | --sync\t\t\t-- Work in syncronous mode')
+    print ('\t-t | --token\t\t\t-- Specify token in the cmdline')
     print ()
     print ('Commands :')
     print ('\trepository\t\t\t-- Repository management')
@@ -230,15 +231,15 @@ def usage():
 
 if __name__ == "__main__":
     try:
-        opts, args = getopt.getopt(sys.argv[1:], 'hvsu:b:', ['help', 'verbose', 'sync', 'user=', 'baseurl='])
+        opts, args = getopt.getopt(sys.argv[1:], 'hvu:b:t:V', ['help', 'verbose', 'user=', 'baseurl=', 'token=', 'version'])
     except getopt.GetoptError as e:
         print (e)
         usage()
 
     verbose = False
     user = None
-    async = True
     baseurl = 'https://blih.epitech.eu/'
+    token = None
 
     for o, a in opts:
         if o in ('-h', '--help'):
@@ -247,10 +248,13 @@ if __name__ == "__main__":
             verbose = True
         elif o in ('-u', '--user'):
             user = a
-        elif o in ('-s', '--sync'):
-            async = False
         elif o in ('-b', '--baseurl'):
             baseurl = a
+        elif o in ('-t', '--token'):
+            token = bytes(a, 'utf8')
+        elif o in ('-V', '--version'):
+            print ('blih version ' + str(version))
+            sys.exit(0)
         else:
             usage()
 
@@ -258,8 +262,8 @@ if __name__ == "__main__":
         usage()
 
     if args[0] == 'repository':
-        repository(args[1:], baseurl, user, verbose, async)
+        repository(args[1:], baseurl, user, token, verbose)
     elif args[0] == 'sshkey':
-        sshkey(args[1:], baseurl, user, verbose, async)
+        sshkey(args[1:], baseurl, user, token, verbose)
     else:
         usage()
