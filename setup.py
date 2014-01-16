@@ -22,7 +22,7 @@ executables = [
 ]
 
 setup(name='blih2exe',
-      version = '0.2',
+      version = '0.3',
       description = 'Portage de blih sur windows',
       options={
           'bdist_msi': bdist_msi_options,
